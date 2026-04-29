@@ -79,6 +79,66 @@ async def run_web_server():
     await uvicorn.Server(uv_config).serve()
 
 
+async def watch_telegram_config(orchestrator, scheduler, untis_worker, handler_ref):
+    import os
+    current_token = config.TELEGRAM_TOKEN
+
+    async def start_bot(token):
+        config.TELEGRAM_TOKEN = token
+        h = TelegramHandler(orchestrator, scheduler)
+        scheduler.set_send_callback(h.send_message)
+        untis_worker.set_send_callback(h.send_message)
+        await h.run()
+        logger.info("Telegram Bot gestartet")
+
+        interval_min = _get_untis_interval()
+        scheduler.scheduler.add_job(
+            untis_worker.check_for_changes,
+            "interval",
+            minutes=interval_min,
+            id="untis_background_check",
+            replace_existing=True,
+        )
+        logger.info(f"Untis-Check alle {interval_min} Minuten gestartet")
+        return h
+
+    if current_token:
+        try:
+            handler_ref[0] = await start_bot(current_token)
+        except Exception as e:
+            logger.error(f"Telegram Bot konnte nicht gestartet werden: {e}")
+    else:
+        logger.warning(f"TELEGRAM_TOKEN nicht gesetzt – Bot inaktiv. Setup: http://localhost:{config.WEB_PORT}/setup")
+
+    while True:
+        await asyncio.sleep(5)
+        new_token = ""
+        if os.path.exists(".env"):
+            try:
+                with open(".env", "r", encoding="utf-8") as f:
+                    for line in f:
+                        line = line.strip()
+                        if line.startswith("TELEGRAM_TOKEN="):
+                            new_token = line.split("=", 1)[1].strip()
+            except Exception:
+                pass
+        
+        if new_token != current_token:
+            logger.info("Telegram Token hat sich geändert. Starte Bot neu...")
+            current_token = new_token
+            if handler_ref[0]:
+                try:
+                    await handler_ref[0].stop()
+                except Exception as e:
+                    logger.error(f"Fehler beim Stoppen des Bots: {e}")
+                handler_ref[0] = None
+            
+            if current_token:
+                try:
+                    handler_ref[0] = await start_bot(current_token)
+                except Exception as e:
+                    logger.error(f"Telegram Bot konnte nicht gestartet werden: {e}")
+
 async def main():
     logger.info("IDA startet...")
     logger.info(f"Web-Interface: http://localhost:{config.WEB_PORT}")
@@ -107,47 +167,20 @@ async def main():
     scheduler.start()
     scheduler.restore_jobs_after_start()
 
-    # Telegram Bot – optional, Fehler stoppen das Web-Interface NICHT
-    handler = None
-    if config.TELEGRAM_TOKEN:
-        try:
-            handler = TelegramHandler(orchestrator, scheduler)
-            scheduler.set_send_callback(handler.send_message)
-            untis_worker.set_send_callback(handler.send_message)
-            await handler.run()
-            logger.info("Telegram Bot gestartet")
-
-            # Untis periodischer Hintergrundcheck
-            interval_min = _get_untis_interval()
-            scheduler.scheduler.add_job(
-                untis_worker.check_for_changes,
-                "interval",
-                minutes=interval_min,
-                id="untis_background_check",
-                replace_existing=True,
-            )
-            logger.info(f"Untis-Check alle {interval_min} Minuten gestartet")
-        except Exception as e:
-            logger.error(
-                f"Telegram Bot konnte nicht gestartet werden: {e}\n"
-                f"Bitte Token prüfen unter: http://localhost:{config.WEB_PORT}/setup"
-            )
-    else:
-        logger.warning(
-            "TELEGRAM_TOKEN nicht gesetzt – Bot inaktiv. "
-            "Setup: http://localhost:%d/setup", config.WEB_PORT
-        )
+    # Telegram Bot Watchdog
+    handler_ref = [None]
+    watch_task = asyncio.create_task(watch_telegram_config(orchestrator, scheduler, untis_worker, handler_ref))
 
     try:
         await web_task
     except (KeyboardInterrupt, SystemExit):
         logger.info("IDA wird beendet...")
     finally:
-        if handler:
-            await handler.stop()
+        watch_task.cancel()
+        if handler_ref[0]:
+            await handler_ref[0].stop()
         scheduler.stop()
         logger.info("IDA beendet.")
-
 
 if __name__ == "__main__":
     asyncio.run(main())
