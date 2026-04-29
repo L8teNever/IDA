@@ -42,7 +42,7 @@ class VisionWorker(BaseAgent):
                     }
                 ],
             )
-            return AgentResponse(content=response.message.content)
+            return AgentResponse(content=response['message']['content'])
         except Exception as e:
             logger.error(f"Vision Worker Fehler: {e}")
             return AgentResponse(

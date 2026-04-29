@@ -39,4 +39,4 @@ class BaseAgent(ABC):
             full_messages.append({"role": "system", "content": system})
         full_messages.extend(messages)
         response = await self.client.chat(model=self.model, messages=full_messages)
-        return response.message.content
+        return response['message']['content']
