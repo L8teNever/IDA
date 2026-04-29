@@ -83,6 +83,10 @@ async def main():
     logger.info("IDA startet...")
     logger.info(f"Web-Interface: http://localhost:{config.WEB_PORT}")
 
+    # Web-Server IMMER als erstes starten – unabhängig von Telegram oder Ollama
+    web_task = asyncio.create_task(run_web_server())
+    logger.info(f"Web-Interface erreichbar: http://localhost:{config.WEB_PORT}")
+
     await wait_for_ollama()
 
     for model in {config.MAIN_MODEL, config.WORKER_MODEL, "moondream"}:
@@ -103,25 +107,31 @@ async def main():
     scheduler.start()
     scheduler.restore_jobs_after_start()
 
-    # Telegram Bot
+    # Telegram Bot – optional, Fehler stoppen das Web-Interface NICHT
     handler = None
     if config.TELEGRAM_TOKEN:
-        handler = TelegramHandler(orchestrator, scheduler)
-        scheduler.set_send_callback(handler.send_message)
-        untis_worker.set_send_callback(handler.send_message)
-        await handler.run()
-        logger.info("Telegram Bot gestartet")
+        try:
+            handler = TelegramHandler(orchestrator, scheduler)
+            scheduler.set_send_callback(handler.send_message)
+            untis_worker.set_send_callback(handler.send_message)
+            await handler.run()
+            logger.info("Telegram Bot gestartet")
 
-        # Untis periodischer Hintergrundcheck
-        interval_min = _get_untis_interval()
-        scheduler.scheduler.add_job(
-            untis_worker.check_for_changes,
-            "interval",
-            minutes=interval_min,
-            id="untis_background_check",
-            replace_existing=True,
-        )
-        logger.info(f"Untis-Check alle {interval_min} Minuten gestartet")
+            # Untis periodischer Hintergrundcheck
+            interval_min = _get_untis_interval()
+            scheduler.scheduler.add_job(
+                untis_worker.check_for_changes,
+                "interval",
+                minutes=interval_min,
+                id="untis_background_check",
+                replace_existing=True,
+            )
+            logger.info(f"Untis-Check alle {interval_min} Minuten gestartet")
+        except Exception as e:
+            logger.error(
+                f"Telegram Bot konnte nicht gestartet werden: {e}\n"
+                f"Bitte Token prüfen unter: http://localhost:{config.WEB_PORT}/setup"
+            )
     else:
         logger.warning(
             "TELEGRAM_TOKEN nicht gesetzt – Bot inaktiv. "
@@ -129,7 +139,7 @@ async def main():
         )
 
     try:
-        await run_web_server()
+        await web_task
     except (KeyboardInterrupt, SystemExit):
         logger.info("IDA wird beendet...")
     finally:
