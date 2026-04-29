@@ -1,6 +1,7 @@
 import logging
 import os
 import tempfile
+import asyncio
 from telegram import Update
 from telegram.ext import (
     Application,
@@ -33,6 +34,14 @@ class TelegramHandler:
             logger.info("Whisper tiny Modell geladen (Sprachtranskription bereit)")
         except ImportError:
             logger.warning("faster-whisper nicht installiert – Sprachnachrichten deaktiviert")
+
+    async def _typing_loop(self, chat):
+        try:
+            while True:
+                await chat.send_action("typing")
+                await asyncio.sleep(4)
+        except asyncio.CancelledError:
+            pass
 
     def _setup_handlers(self):
         self.app.add_handler(CommandHandler("start", self._cmd_start))
@@ -147,8 +156,11 @@ class TelegramHandler:
     async def _handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_allowed(update.effective_user.id):
             return
-        await update.message.chat.send_action("typing")
-        await self._process_and_reply(update, update.message.text)
+        typing_task = asyncio.create_task(self._typing_loop(update.message.chat))
+        try:
+            await self._process_and_reply(update, update.message.text)
+        finally:
+            typing_task.cancel()
 
     async def _handle_voice(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_allowed(update.effective_user.id):
@@ -157,65 +169,70 @@ class TelegramHandler:
             await update.message.reply_text("Sprachtranskription ist nicht verfügbar.")
             return
 
-        await update.message.chat.send_action("typing")
-
-        voice_file = await update.message.voice.get_file()
-        with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
-            await voice_file.download_to_drive(tmp.name)
-            tmp_path = tmp.name
-
+        typing_task = asyncio.create_task(self._typing_loop(update.message.chat))
         try:
-            segments, _ = self._transcriber.transcribe(tmp_path, language="de")
-            text = " ".join(seg.text for seg in segments).strip()
-            if not text:
-                await update.message.reply_text("Ich konnte die Sprachnachricht nicht transkribieren.")
-                return
-            await update.message.reply_text(f'[Gehört: "{text}"]')
-            await self._process_and_reply(update, text)
+            voice_file = await update.message.voice.get_file()
+            with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as tmp:
+                await voice_file.download_to_drive(tmp.name)
+                tmp_path = tmp.name
+
+            try:
+                segments, _ = self._transcriber.transcribe(tmp_path, language="de")
+                text = " ".join(seg.text for seg in segments).strip()
+                if not text:
+                    await update.message.reply_text("Ich konnte die Sprachnachricht nicht transkribieren.")
+                    return
+                await update.message.reply_text(f'[Gehört: "{text}"]')
+                await self._process_and_reply(update, text)
+            finally:
+                os.unlink(tmp_path)
         finally:
-            os.unlink(tmp_path)
+            typing_task.cancel()
 
     async def _handle_photo(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_allowed(update.effective_user.id):
             return
-        await update.message.chat.send_action("typing")
-
-        photo = update.message.photo[-1]
-        photo_file = await photo.get_file()
-
-        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-            await photo_file.download_to_drive(tmp.name)
-            tmp_path = tmp.name
-
+        
+        typing_task = asyncio.create_task(self._typing_loop(update.message.chat))
         try:
-            import base64
-            with open(tmp_path, "rb") as f:
-                image_b64 = base64.b64encode(f.read()).decode()
+            photo = update.message.photo[-1]
+            photo_file = await photo.get_file()
 
-            caption = update.message.caption or "Was siehst du auf diesem Bild? Beschreibe es."
+            with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                await photo_file.download_to_drive(tmp.name)
+                tmp_path = tmp.name
 
-            vision_context = f"[Bild wurde gesendet. Base64-Daten für Vision-Modell verfügbar]"
+            try:
+                import base64
+                with open(tmp_path, "rb") as f:
+                    image_b64 = base64.b64encode(f.read()).decode()
 
-            response = await self.orchestrator.process(AgentMessage(
-                content=caption,
-                metadata={
-                    "user_id": update.effective_user.id,
-                    "username": update.effective_user.first_name,
-                    "chat_id": update.effective_chat.id,
-                    "image_b64": image_b64,
-                    "has_image": True,
-                }
-            ))
+                caption = update.message.caption or "Was siehst du auf diesem Bild? Beschreibe es."
 
-            if response.metadata.get("schedule_command"):
-                self._handle_schedule_command(
-                    schedule_line=response.metadata["schedule_command"],
-                    chat_id=update.effective_chat.id,
-                )
+                vision_context = f"[Bild wurde gesendet. Base64-Daten für Vision-Modell verfügbar]"
 
-            await update.message.reply_text(response.content)
+                response = await self.orchestrator.process(AgentMessage(
+                    content=caption,
+                    metadata={
+                        "user_id": update.effective_user.id,
+                        "username": update.effective_user.first_name,
+                        "chat_id": update.effective_chat.id,
+                        "image_b64": image_b64,
+                        "has_image": True,
+                    }
+                ))
+
+                if response.metadata.get("schedule_command"):
+                    self._handle_schedule_command(
+                        schedule_line=response.metadata["schedule_command"],
+                        chat_id=update.effective_chat.id,
+                    )
+
+                await update.message.reply_text(response.content)
+            finally:
+                os.unlink(tmp_path)
         finally:
-            os.unlink(tmp_path)
+            typing_task.cancel()
 
     async def _handle_document(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not self._is_allowed(update.effective_user.id):
