@@ -21,8 +21,7 @@ logger = logging.getLogger(__name__)
 TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
-from agents.workers._google_base import GOOGLE_GOOGLE_SCOPES
-GOOGLE_SCOPES = GOOGLE_GOOGLE_SCOPES
+from agents.workers._google_base import GOOGLE_SCOPES
 GOOGLE_CALLBACK_URL = f"http://localhost:{config.WEB_PORT}/auth/google/callback"
 
 app = FastAPI(title="IDA Setup")
