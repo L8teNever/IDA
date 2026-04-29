@@ -86,10 +86,19 @@ class Orchestrator(BaseAgent):
                 self.conversation_history[user_id] = []
             history = self.conversation_history[user_id]
             history.append({"role": "user", "content": f"[Bild gesendet] {message.content}"})
+            
+            context_text = ctx.as_prompt_text()
+            system = SYSTEM_PROMPT.format(
+                workers=self._workers_description(),
+                context=context_text,
+            )
+            
             vision_resp = await self.workers["vision_worker"].process(message)
             ctx.set("letztes_bild_analyse", vision_resp.content, worker="vision_worker")
-            self._append_history(user_id, history, f"[Bildanalyse] {vision_resp.content}")
-            return vision_resp
+            
+            final = await self._summarize(message.content, "vision_worker", vision_resp.content, ctx, system)
+            self._append_history(user_id, history, final)
+            return AgentResponse(content=final)
 
         if user_id not in self.conversation_history:
             self.conversation_history[user_id] = []
