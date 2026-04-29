@@ -8,7 +8,7 @@ TELEGRAM_ALLOWED_USERS = [
     int(x.strip()) for x in os.getenv("TELEGRAM_ALLOWED_USERS", "").split(",") if x.strip()
 ]
 
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11435")
 MAIN_MODEL = os.getenv("MAIN_MODEL", "llama3.2:3b")
 WORKER_MODEL = os.getenv("WORKER_MODEL", "llama3.2:1b")
 
