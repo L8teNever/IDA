@@ -32,7 +32,9 @@ _oauth_flows: dict[str, object] = {}
 
 def _read_env() -> dict:
     env = {}
-    env_path = Path(".env")
+    env_path = Path(config.USER_ENV)
+    if not env_path.exists():
+        env_path = Path(".env")
     if env_path.exists():
         for line in env_path.read_text(encoding="utf-8").splitlines():
             line = line.strip()
@@ -43,7 +45,8 @@ def _read_env() -> dict:
 
 
 def _write_env(updates: dict):
-    env_path = Path(".env")
+    env_path = Path(config.USER_ENV)
+    os.makedirs(os.path.dirname(config.USER_ENV), exist_ok=True)
     current = _read_env()
     current.update(updates)
     lines = [f"{k}={v}" for k, v in current.items()]

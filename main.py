@@ -113,9 +113,10 @@ async def watch_telegram_config(orchestrator, scheduler, untis_worker, handler_r
     while True:
         await asyncio.sleep(5)
         new_token = ""
-        if os.path.exists(".env"):
+        env_file = config.USER_ENV if os.path.exists(config.USER_ENV) else ".env"
+        if os.path.exists(env_file):
             try:
-                with open(".env", "r", encoding="utf-8") as f:
+                with open(env_file, "r", encoding="utf-8") as f:
                     for line in f:
                         line = line.strip()
                         if line.startswith("TELEGRAM_TOKEN="):
