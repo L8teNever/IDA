@@ -1,0 +1,36 @@
+version: '3.8'
+
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ida-ollama
+    volumes:
+      - ollama_data:/root/.ollama
+    ports:
+      - "11434:11434"
+    restart: unless-stopped
+    environment:
+      - OLLAMA_NUM_PARALLEL=2
+      - OLLAMA_MAX_LOADED_MODELS=4
+      - OLLAMA_KEEP_ALIVE=10m
+
+  ida-bot:
+    # Vorgebautes Image von GitHub (wird automatisch aktualisiert):
+    image: ghcr.io/l8tenever/ida:latest
+    # Alternativ lokal bauen (Zeile oben auskommentieren, diese einkommentieren):
+    # build: .
+    container_name: ida-bot
+    depends_on:
+      - ollama
+    env_file:
+      - .env
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+
+volumes:
+  ollama_data:

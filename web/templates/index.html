@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<h4 class="mb-4 text-light">Dashboard <small class="text-muted fs-6">{{ now }}</small></h4>
+
+<div class="row g-3 mb-3">
+  <div class="col-md-3">
+    <div class="card p-3">
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="badge-dot bg-{% if ollama_ok %}success{% else %}danger{% endif %}"></span>
+        <span class="text-muted small">Ollama</span>
+      </div>
+      <div class="fw-semibold text-light">{% if ollama_ok %}Verbunden{% else %}Nicht erreichbar{% endif %}</div>
+      <div class="text-muted small mt-1">{{ main_model }} / {{ worker_model }}</div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3">
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="badge-dot bg-{% if telegram_set %}success{% else %}warning{% endif %}"></span>
+        <span class="text-muted small">Telegram</span>
+      </div>
+      <div class="fw-semibold text-light">{% if telegram_set %}Aktiv{% else %}Nicht konfiguriert{% endif %}</div>
+      <div class="text-muted small mt-1"><a href="/setup" class="text-muted">→ Einstellungen</a></div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3">
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="badge-dot bg-{% if google.connected %}success{% elif google.creds_file %}warning{% else %}secondary{% endif %}"></span>
+        <span class="text-muted small">Google Kalender</span>
+      </div>
+      <div class="fw-semibold text-light">
+        {% if google.connected %}Verbunden{% elif google.creds_file %}Teilweise{% else %}Nicht eingerichtet{% endif %}
+      </div>
+      <div class="text-muted small mt-1"><a href="/google" class="text-muted">→ Einrichten</a></div>
+    </div>
+  </div>
+  <div class="col-md-3">
+    <div class="card p-3">
+      <div class="d-flex align-items-center gap-2 mb-1">
+        <span class="badge-dot bg-{% if untis.configured %}success{% else %}secondary{% endif %}"></span>
+        <span class="text-muted small">WebUntis</span>
+      </div>
+      <div class="fw-semibold text-light">{% if untis.configured %}Konfiguriert{% else %}Nicht eingerichtet{% endif %}</div>
+      <div class="text-muted small mt-1">
+        {% if untis.last_check %}Letzter Check: {{ untis.last_check }}
+        {% else %}<a href="/untis" class="text-muted">→ Einrichten</a>{% endif %}
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-md-6">
+    <div class="card p-3">
+      <div class="text-muted small mb-1"><i class="bi bi-calendar3"></i> Geplante Tasks</div>
+      <div class="display-6 text-light fw-bold">{{ job_count }}</div>
+      <a href="/jobs" class="text-muted small">→ Alle anzeigen</a>
+    </div>
+  </div>
+  <div class="col-md-6">
+    <div class="card p-3">
+      <div class="text-muted small mb-1"><i class="bi bi-people"></i> Bekannte Nutzer</div>
+      <div class="display-6 text-light fw-bold">{{ user_count }}</div>
+      <div class="text-muted small">Gesprächskontext gespeichert</div>
+    </div>
+  </div>
+</div>
+
+{% if not telegram_set or not google.connected %}
+<div class="alert alert-warning border-warning">
+  <i class="bi bi-exclamation-triangle me-2"></i>
+  <strong>Setup unvollständig:</strong>
+  {% if not telegram_set %}<a href="/setup" class="alert-link">Telegram-Token</a> fehlt. {% endif %}
+  {% if not google.connected %}<a href="/google" class="alert-link">Google Kalender</a> nicht verbunden.{% endif %}
+</div>
+{% endif %}
+
+<script>setTimeout(() => location.reload(), 30000);</script>
+{% endblock %}

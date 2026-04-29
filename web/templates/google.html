@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% block title %}Google Kalender{% endblock %}
+{% block content %}
+<h4 class="mb-4 text-light">Google Kalender</h4>
+
+{% if error %}
+<div class="alert alert-danger border-danger">
+  <i class="bi bi-exclamation-triangle me-2"></i>{{ error }}
+</div>
+{% endif %}
+
+<!-- Status -->
+<div class="card p-4 mb-3">
+  <h6 class="text-muted mb-3">Status</h6>
+  <div class="d-flex flex-column gap-2">
+    <div class="d-flex align-items-center gap-3">
+      <span class="badge-dot bg-{% if status.creds_file %}success{% else %}danger{% endif %}"></span>
+      <span class="text-light">Zugangsdaten (google_credentials.json)</span>
+      {% if not status.creds_file %}<span class="text-danger small">fehlt</span>{% else %}<span class="text-success small">vorhanden</span>{% endif %}
+    </div>
+    <div class="d-flex align-items-center gap-3">
+      <span class="badge-dot bg-{% if status.token_file %}success{% else %}secondary{% endif %}"></span>
+      <span class="text-light">Auth-Token (google_token.json)</span>
+      {% if not status.token_file %}<span class="text-muted small">nicht erstellt</span>{% else %}<span class="text-success small">vorhanden</span>{% endif %}
+    </div>
+    <div class="d-flex align-items-center gap-3">
+      <span class="badge-dot bg-{% if status.connected %}success{% else %}secondary{% endif %}"></span>
+      <span class="text-light">Verbindung aktiv</span>
+      {% if status.connected %}<span class="text-success small">ja</span>{% else %}<span class="text-muted small">nein</span>{% endif %}
+    </div>
+  </div>
+</div>
+
+<!-- Schritt 1: Zugangsdaten -->
+<div class="card p-4 mb-3">
+  <h6 class="text-muted mb-1"><span class="badge bg-primary me-2">1</span>Zugangsdaten hochladen</h6>
+  <p class="text-muted small mb-3">
+    Erstelle ein Google Cloud Projekt, aktiviere die Calendar API, erstelle eine OAuth-Client-ID (Typ: Desktop-App)
+    und lade die <code>credentials.json</code> herunter.
+    Dann hier hochladen:<br>
+    <a href="https://console.cloud.google.com/apis/credentials" target="_blank" class="text-info">
+      console.cloud.google.com → APIs & Dienste → Anmeldedaten
+    </a>
+  </p>
+  <form method="post" action="/google/upload-credentials" enctype="multipart/form-data" class="d-flex gap-2 align-items-center">
+    <input type="file" name="credentials_file" accept=".json" class="form-control bg-dark text-light border-secondary" style="max-width:300px;">
+    <button type="submit" class="btn btn-outline-primary">
+      <i class="bi bi-upload me-1"></i>Hochladen
+    </button>
+  </form>
+  {% if status.creds_file %}
+  <div class="mt-2 text-success small"><i class="bi bi-check-circle me-1"></i>Zugangsdaten vorhanden</div>
+  {% endif %}
+</div>
+
+<!-- Schritt 2: OAuth -->
+<div class="card p-4 mb-3 {% if not status.creds_file %}opacity-50{% endif %}">
+  <h6 class="text-muted mb-1"><span class="badge bg-primary me-2">2</span>Mit Google anmelden</h6>
+  <p class="text-muted small mb-3">
+    Klicke auf "Verbinden", melde dich mit deinem Google-Konto an und erlaube IDA den Kalender-Zugriff.<br>
+    <span class="text-warning small">
+      <i class="bi bi-info-circle me-1"></i>
+      Füge <code>{{ callback_url }}</code> als autorisierte Weiterleitungs-URI in deiner Google Cloud OAuth-App hinzu.
+    </span>
+  </p>
+  {% if status.connected %}
+    <div class="d-flex gap-2">
+      <span class="text-success"><i class="bi bi-check-circle me-1"></i>Verbunden</span>
+      <form method="post" action="/google/disconnect" class="d-inline ms-3">
+        <button type="submit" class="btn btn-outline-danger btn-sm">
+          <i class="bi bi-x-circle me-1"></i>Verbindung trennen
+        </button>
+      </form>
+    </div>
+  {% else %}
+    <a href="/auth/google/start" class="btn btn-primary {% if not status.creds_file %}disabled{% endif %}">
+      <i class="bi bi-google me-2"></i>Mit Google verbinden
+    </a>
+  {% endif %}
+</div>
+
+<style>.badge-dot { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }</style>
+{% endblock %}

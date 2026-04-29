@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Einstellungen{% endblock %}
+{% block content %}
+<h4 class="mb-4 text-light">Einstellungen</h4>
+
+{% if saved %}
+<div class="alert alert-success alert-dismissible fade show border-success" role="alert">
+  <i class="bi bi-check-circle me-2"></i> Gespeichert. <strong>IDA neu starten</strong> damit die Änderungen wirksam werden:
+  <code class="ms-2">docker-compose restart ida-bot</code>
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<form method="post" action="/setup">
+  <div class="card p-4 mb-3">
+    <h6 class="text-muted mb-3"><i class="bi bi-telegram me-2"></i>Telegram</h6>
+    <div class="mb-3">
+      <label class="form-label text-light">Bot Token
+        <a href="https://t.me/BotFather" target="_blank" class="text-muted small ms-2">(@BotFather)</a>
+      </label>
+      <input type="password" name="telegram_token" class="form-control bg-dark text-light border-secondary"
+             placeholder="{% if token_set %}{{ token_masked }}{% else %}Neuen Token eingeben...{% endif %}"
+             autocomplete="off">
+      {% if token_set %}<div class="form-text text-success"><i class="bi bi-check-circle"></i> Token ist gesetzt</div>{% endif %}
+    </div>
+    <div class="mb-0">
+      <label class="form-label text-light">Erlaubte Nutzer-IDs
+        <a href="https://t.me/userinfobot" target="_blank" class="text-muted small ms-2">(@userinfobot)</a>
+      </label>
+      <input type="text" name="allowed_users" class="form-control bg-dark text-light border-secondary"
+             value="{{ allowed_users }}" placeholder="123456789,987654321">
+      <div class="form-text">Kommagetrennt. Leer lassen = jeder darf schreiben.</div>
+    </div>
+  </div>
+
+  <div class="card p-4 mb-3">
+    <h6 class="text-muted mb-3"><i class="bi bi-cpu me-2"></i>Modelle</h6>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label text-light">IDA Hauptmodell</label>
+        <input type="text" name="main_model" class="form-control bg-dark text-light border-secondary"
+               value="{{ main_model }}">
+        <div class="form-text">Empfehlung: llama3.2:3b (für i7 ohne GPU)</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label text-light">Worker-Modell</label>
+        <input type="text" name="worker_model" class="form-control bg-dark text-light border-secondary"
+               value="{{ worker_model }}">
+        <div class="form-text">Empfehlung: llama3.2:1b (klein, mehrere gleichzeitig)</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card p-4 mb-4">
+    <h6 class="text-muted mb-3"><i class="bi bi-moon me-2"></i>Nachtzeit für automatische Tasks</h6>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label text-light">Von (Stunde)</label>
+        <input type="number" name="night_start" min="0" max="23"
+               class="form-control bg-dark text-light border-secondary" value="{{ night_start }}">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label text-light">Bis (Stunde)</label>
+        <input type="number" name="night_end" min="0" max="23"
+               class="form-control bg-dark text-light border-secondary" value="{{ night_end }}">
+      </div>
+    </div>
+    <div class="form-text mt-2">Niedrig-priorisierte geplante Tasks laufen nur in diesem Zeitfenster.</div>
+  </div>
+
+  <button type="submit" class="btn btn-primary px-4">
+    <i class="bi bi-save me-2"></i>Speichern
+  </button>
+</form>
+{% endblock %}

@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}WebUntis{% endblock %}
+{% block content %}
+<h4 class="mb-4 text-light">WebUntis – Stundenplan</h4>
+
+{% if saved and not error %}
+<div class="alert alert-success border-success alert-dismissible fade show">
+  <i class="bi bi-check-circle me-2"></i>Gespeichert.
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+{% if error %}
+<div class="alert alert-{% if 'OK' in error %}success{% else %}danger{% endif %} border-{% if 'OK' in error %}success{% else %}danger{% endif %} alert-dismissible fade show">
+  <i class="bi bi-{% if 'OK' in error %}check-circle{% else %}exclamation-triangle{% endif %} me-2"></i>{{ error }}
+  <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+</div>
+{% endif %}
+
+<!-- Status -->
+<div class="card p-3 mb-3 d-flex flex-row align-items-center gap-3">
+  <span class="badge-dot bg-{% if status.configured %}success{% else %}secondary{% endif %}" style="width:12px;height:12px;border-radius:50%;display:inline-block;flex-shrink:0;"></span>
+  <div>
+    <span class="text-light">{% if status.configured %}Konfiguriert{% else %}Nicht konfiguriert{% endif %}</span>
+    {% if status.last_check %}
+    <span class="text-muted small ms-3"><i class="bi bi-clock me-1"></i>Letzter Check: {{ status.last_check }}</span>
+    {% endif %}
+  </div>
+</div>
+
+<form method="post" action="/untis">
+  <div class="card p-4 mb-3">
+    <h6 class="text-muted mb-3"><i class="bi bi-server me-2"></i>Server-Verbindung</h6>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label text-light">Untis-Server</label>
+        <input type="text" name="server" class="form-control bg-dark text-light border-secondary"
+               value="{{ cfg.get('server', '') }}" placeholder="hepta.webuntis.com">
+        <div class="form-text">Nur der Hostname, ohne https://</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label text-light">Schulname (URL-Slug)</label>
+        <input type="text" name="school" class="form-control bg-dark text-light border-secondary"
+               value="{{ cfg.get('school', '') }}" placeholder="meine-schule">
+        <div class="form-text">Findet man in der WebUntis-URL nach /WebUntis/</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card p-4 mb-3">
+    <h6 class="text-muted mb-3"><i class="bi bi-person-lock me-2"></i>Zugangsdaten</h6>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label text-light">Benutzername</label>
+        <input type="text" name="username" class="form-control bg-dark text-light border-secondary"
+               value="{{ cfg.get('username', '') }}" autocomplete="off">
+      </div>
+      <div class="col-md-6">
+        <label class="form-label text-light">Passwort</label>
+        <input type="password" name="password" class="form-control bg-dark text-light border-secondary"
+               placeholder="{% if pw_set %}{{ pw_masked }} (leer = unverändert){% else %}Passwort eingeben{% endif %}"
+               autocomplete="new-password">
+        {% if pw_set %}<div class="form-text text-success"><i class="bi bi-check-circle"></i> Passwort gesetzt</div>{% endif %}
+      </div>
+    </div>
+    <div class="mt-2">
+      <small class="text-muted">
+        <i class="bi bi-shield-lock me-1"></i>
+        Zugangsdaten werden lokal in <code>data/untis_config.json</code> gespeichert und verlassen nie den Server.
+      </small>
+    </div>
+  </div>
+
+  <div class="card p-4 mb-3">
+    <h6 class="text-muted mb-3"><i class="bi bi-bell me-2"></i>Benachrichtigungen</h6>
+    <div class="row g-3">
+      <div class="col-md-6">
+        <label class="form-label text-light">Prüfintervall (Minuten)</label>
+        <input type="number" name="check_interval" min="5" max="1440"
+               class="form-control bg-dark text-light border-secondary"
+               value="{{ cfg.get('check_interval_minutes', 30) }}">
+        <div class="form-text">Wie oft auf Stundenplanänderungen geprüft wird</div>
+      </div>
+      <div class="col-md-6">
+        <label class="form-label text-light">Telegram Chat-IDs für Benachrichtigungen</label>
+        <input type="text" name="notify_chat_ids" class="form-control bg-dark text-light border-secondary"
+               value="{{ cfg.get('notify_chat_ids', [])|join(',') }}"
+               placeholder="123456789,987654321">
+        <div class="form-text">Leer = alle erlaubten Nutzer benachrichtigen</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="d-flex gap-2">
+    <button type="submit" class="btn btn-primary px-4">
+      <i class="bi bi-save me-2"></i>Speichern
+    </button>
+    <form method="post" action="/untis/test" class="d-inline">
+      <button type="submit" class="btn btn-outline-secondary px-4" {% if not status.configured %}disabled{% endif %}>
+        <i class="bi bi-plug me-2"></i>Verbindung testen
+      </button>
+    </form>
+  </div>
+</form>
+
+<div class="card p-3 mt-4">
+  <h6 class="text-muted mb-2"><i class="bi bi-info-circle me-2"></i>Wie finde ich meinen Schulnamen?</h6>
+  <p class="text-muted small mb-0">
+    Melde dich unter <code>webuntis.com</code> an → schau in die URL-Leiste:<br>
+    <code>https://<strong>hepta</strong>.webuntis.com/WebUntis/?school=<strong>meine-schule</strong>#/basic/login</code><br>
+    → Server: <code>hepta.webuntis.com</code> | Schulname: <code>meine-schule</code>
+  </p>
+</div>
+{% endblock %}

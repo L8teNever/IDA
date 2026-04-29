@@ -1,0 +1,25 @@
+# Secrets & Laufzeitdaten – niemals ins Repo!
+.env
+data/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE & Claude Code intern
+.idea/
+.vscode/
+.claude/
+*.swp
