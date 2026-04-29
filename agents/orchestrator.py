@@ -103,22 +103,27 @@ class Orchestrator(BaseAgent):
         )
         raw = await self._chat(messages=history, system=system)
 
+        import re
+
         # ── CHAIN: mehrere Worker nacheinander ──────────────────────────────
-        if raw.startswith("CHAIN:"):
-            return await self._handle_chain(raw, message, user_id, history, ctx, system)
+        chain_match = re.search(r'(CHAIN:[^\n]+)', raw)
+        if chain_match:
+            return await self._handle_chain(chain_match.group(1), message, user_id, history, ctx, system)
 
         # ── DELEGATE: einzelner Worker ──────────────────────────────────────
-        if raw.startswith("DELEGATE:"):
-            return await self._handle_delegate(raw, message, user_id, history, ctx, system)
+        del_match = re.search(r'(DELEGATE:[^\n]+)', raw)
+        if del_match:
+            return await self._handle_delegate(del_match.group(1), message, user_id, history, ctx, system)
 
         # ── SCHEDULE: wiederkehrender Task ──────────────────────────────────
-        if raw.startswith("SCHEDULE:"):
-            lines = raw.split("\n", 1)
-            user_message = lines[1].strip() if len(lines) > 1 else "Aufgabe wurde geplant."
+        sched_match = re.search(r'(SCHEDULE:[^\n]+)(?:\n(.*))?', raw, re.DOTALL)
+        if sched_match:
+            sched_cmd = sched_match.group(1)
+            user_message = sched_match.group(2).strip() if sched_match.group(2) else "Aufgabe wurde geplant."
             self._append_history(user_id, history, user_message)
             return AgentResponse(
                 content=user_message,
-                metadata={"schedule_command": lines[0]},
+                metadata={"schedule_command": sched_cmd},
             )
 
         self._append_history(user_id, history, raw)

@@ -59,10 +59,11 @@ def build_service(api: str, version: str):
 def _parse_json_response(raw: str) -> Optional[dict]:
     """LLM-Antwort bereinigen und als JSON parsen."""
     import json
-    clean = raw.strip()
-    if clean.startswith("```"):
-        clean = clean.split("\n", 1)[-1].rsplit("```", 1)[0].strip()
+    import re
     try:
-        return json.loads(clean)
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if match:
+            return json.loads(match.group(0))
     except Exception:
-        return None
+        pass
+    return None
