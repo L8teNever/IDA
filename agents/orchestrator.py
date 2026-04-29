@@ -263,6 +263,6 @@ class Orchestrator(BaseAgent):
 
     def _append_history(self, user_id: int, history: list, response: str):
         history.append({"role": "assistant", "content": response})
-        if len(history) > 30:
-            self.conversation_history[user_id] = history[-30:]
+        if len(history) > 10:
+            self.conversation_history[user_id] = history[-10:]
         self._save_history()
