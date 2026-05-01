@@ -209,9 +209,8 @@ class Orchestrator(BaseAgent):
         worker_resp = await self.workers[worker_name].process(worker_msg)
         ctx.set(f"{worker_name}_ergebnis", worker_resp.content, worker=worker_name)
 
-        final = await self._formulate_response(message.content, worker_resp.content)
-        self._append_history(user_id, history, final)
-        return AgentResponse(content=final)
+        self._append_history(user_id, history, worker_resp.content)
+        return AgentResponse(content=worker_resp.content)
 
     async def _handle_chain(
         self, raw: str, message: AgentMessage,
@@ -238,29 +237,11 @@ class Orchestrator(BaseAgent):
             all_results.append((worker_name, worker_resp.content))
             ctx.set(f"{worker_name}_ergebnis", worker_resp.content, worker=worker_name)
 
-        combined = "\n\n".join(f"[{n}]\n{r}" for n, r in all_results)
-        final = await self._formulate_response(message.content, combined)
-        self._append_history(user_id, history, final)
-        return AgentResponse(content=final)
+        combined = "\n\n".join(r for _, r in all_results)
+        self._append_history(user_id, history, combined)
+        return AgentResponse(content=combined)
 
     # ── Hilfsmethoden ────────────────────────────────────────────────────────
-
-    async def _formulate_response(self, original_question: str, worker_result: str) -> str:
-        prompt = (
-            f'Frage: "{original_question}"\n\n'
-            f"Rohdaten der Spezialisten:\n{worker_result}\n\n"
-            "Verarbeite die Rohdaten und beantworte die Frage:\n"
-            "- Filtere: zeige nur was zur Frage passt (nach heute gefragt → nur heute)\n"
-            "- Sortiere: zeitlich oder nach Relevanz\n"
-            "- Strukturiere: gruppiere sinnvoll wenn nötig\n"
-            "- Kombiniere: kommen mehrere Quellen, fasse sie zu einer Antwort zusammen\n"
-            "- Kein Vorgeplänkel, direkt die Antwort"
-        )
-        return await self._chat(
-            messages=[{"role": "user", "content": prompt}],
-            system="Du bist IDA, eine persönliche KI-Assistentin. Antworte auf Deutsch.",
-            num_predict=600,
-        )
 
     @staticmethod
     def _enrich_task(task: str, ctx: SharedContext) -> str:
