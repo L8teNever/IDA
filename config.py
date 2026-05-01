@@ -26,3 +26,4 @@ UNTIS_CONFIG_FILE = os.path.join(DATA_DIR, "untis_config.json")
 
 WEB_PORT = int(os.getenv("WEB_PORT", "8080"))
 WEB_HOST = os.getenv("WEB_HOST", "0.0.0.0")
+WEB_PUBLIC_PORT = int(os.getenv("WEB_PUBLIC_PORT", str(WEB_PORT)))

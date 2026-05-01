@@ -22,7 +22,7 @@ TEMPLATES_DIR = Path(__file__).parent / "templates"
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 from agents.workers._google_base import GOOGLE_SCOPES
-GOOGLE_CALLBACK_URL = f"http://localhost:{config.WEB_PORT}/auth/google/callback"
+GOOGLE_CALLBACK_URL = f"http://localhost:{config.WEB_PUBLIC_PORT}/auth/google/callback"
 
 app = FastAPI(title="IDA Setup")
 _oauth_flows: dict[str, object] = {}
