@@ -43,7 +43,7 @@ async def pull_model(model: str):
         try:
             resp = await client.get("/api/tags")
             available = [m["name"] for m in resp.json().get("models", [])]
-            if any(model.split(":")[0] in m for m in available):
+            if model in available:
                 logger.info(f"Modell vorhanden: {model}")
                 return
         except Exception as e:
