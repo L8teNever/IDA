@@ -109,11 +109,14 @@ class Orchestrator(BaseAgent):
                 self.conversation_history[user_id] = []
             history = self.conversation_history[user_id]
             history.append({"role": "user", "content": f"[Bild gesendet] {message.content}"})
-            
+
+            user_memory = self.longterm_memory.get(user_id, [])
+            memory_str = "\n".join(f"- {m}" for m in user_memory) if user_memory else "Noch keine Fakten gespeichert."
             context_text = ctx.as_prompt_text()
             system = SYSTEM_PROMPT.format(
                 workers=self._workers_description(),
                 context=context_text,
+                memory=memory_str,
             )
             
             vision_resp = await self.workers["vision_worker"].process(message)
