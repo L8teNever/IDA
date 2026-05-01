@@ -248,12 +248,13 @@ class Orchestrator(BaseAgent):
     async def _formulate_response(self, original_question: str, worker_result: str) -> str:
         prompt = (
             f'Frage: "{original_question}"\n\n'
-            f"Ergebnis der Spezialisten:\n{worker_result}\n\n"
-            "Beantworte die Frage präzise und vollständig:\n"
-            "- Filtere nur die für die Frage relevanten Informationen heraus\n"
-            "- Hat der Nutzer nach heute gefragt, zeige nur heutige Informationen\n"
-            "- Kommen mehrere Spezialisten-Ergebnisse, kombiniere sie zu einer Antwort\n"
-            "- Keine Floskeln, kein Vorgeplänkel"
+            f"Rohdaten der Spezialisten:\n{worker_result}\n\n"
+            "Verarbeite die Rohdaten und beantworte die Frage:\n"
+            "- Filtere: zeige nur was zur Frage passt (nach heute gefragt → nur heute)\n"
+            "- Sortiere: zeitlich oder nach Relevanz\n"
+            "- Strukturiere: gruppiere sinnvoll wenn nötig\n"
+            "- Kombiniere: kommen mehrere Quellen, fasse sie zu einer Antwort zusammen\n"
+            "- Kein Vorgeplänkel, direkt die Antwort"
         )
         return await self._chat(
             messages=[{"role": "user", "content": prompt}],
