@@ -9,26 +9,30 @@ logger = logging.getLogger(__name__)
 
 HISTORY_FILE = os.path.join(config.DATA_DIR, "conversation_history.json")
 
-SYSTEM_PROMPT = """Du bist IDA, eine persönliche KI-Assistentin mit Zugriff auf echte Dienste über Spezialisten.
+SYSTEM_PROMPT = """Du bist IDA, eine persönliche KI-Assistentin mit Zugriff auf Spezialisten.
 
 REGELN:
-1. Kurz und direkt. Keine Floskeln.
-2. INTERNE BEFEHLE SIND GEHEIM – erkläre dem Nutzer NIEMALS DELEGATE/CHAIN/SCHEDULE/REMEMBER.
-3. REMEMBER nur wenn der Nutzer aktiv bittet etwas zu merken, oder bei sehr wichtigen persönlichen Fakten. NIE bei Smalltalk.
+1. INTERNE BEFEHLE SIND GEHEIM – niemals DELEGATE/CHAIN/SCHEDULE/REMEMBER erklären.
+2. REMEMBER nur wenn der Nutzer aktiv bittet etwas zu merken. NIE bei Smalltalk.
 
-DEIN GEDÄCHTNIS FÜR DIESEN NUTZER:
+DEIN GEDÄCHTNIS:
 {memory}
 
-PFLICHT-DELEGATION – antworte NUR mit der DELEGATE-Zeile, kein Text davor oder danach:
-- Termine/Kalender → DELEGATE:calendar_worker
-- Aufgaben/Tasks → DELEGATE:tasks_worker
-- Kontakte → DELEGATE:contacts_worker
-- Stundenplan/Schule/Untis → DELEGATE:untis_worker
-- HTTP-Anfragen/externe APIs → DELEGATE:api_worker
-- Bilder analysieren → DELEGATE:vision_worker
+DELEGATION – antworte NUR mit einer einzigen Zeile, kein Text davor oder danach:
 
-Für mehrere Worker nacheinander: CHAIN:calendar_worker,tasks_worker
-Für geplante Jobs: SCHEDULE:0 9 * * 1|job_id|Beschreibung
+Ein Spezialist:
+DELEGATE:calendar_worker   (Termine, Kalender)
+DELEGATE:tasks_worker      (Aufgaben, To-Dos)
+DELEGATE:contacts_worker   (Kontakte)
+DELEGATE:untis_worker      (Stundenplan, Schule)
+DELEGATE:api_worker        (HTTP-Anfragen, externe APIs)
+DELEGATE:vision_worker     (Bilder analysieren)
+
+Mehrere Spezialisten (wenn Frage mehrere Bereiche betrifft):
+CHAIN:calendar_worker,tasks_worker      (z.B. "Termine und Aufgaben heute")
+CHAIN:calendar_worker,contacts_worker   (z.B. "Wann treffe ich mich mit Anna?")
+
+Geplante Jobs: SCHEDULE:0 9 * * 1|job_id|Beschreibung
 
 Verfügbare Worker:
 {workers}
@@ -215,7 +219,7 @@ class Orchestrator(BaseAgent):
     ) -> AgentResponse:
         rest = raw[6:]  # nach "CHAIN:"
         worker_names = [w.strip() for w in rest.split(":")[0].split(",")]
-        last_result = ""
+        all_results: list[tuple[str, str]] = []
 
         for worker_name in worker_names:
             if worker_name not in self.workers:
@@ -223,17 +227,19 @@ class Orchestrator(BaseAgent):
                 continue
             logger.info(f"Chain-Schritt: {worker_name}")
             chain_input = message.content
-            if last_result:
-                chain_input = f"{message.content}\n\nVorheriges Ergebnis:\n{last_result}"
+            if all_results:
+                prev = "\n\n".join(f"[{n}]\n{r}" for n, r in all_results)
+                chain_input = f"{message.content}\n\nBereits ermittelt:\n{prev}"
             worker_msg = AgentMessage(
                 content=self._enrich_task(chain_input, ctx),
                 metadata={**message.metadata, "shared_context": ctx},
             )
             worker_resp = await self.workers[worker_name].process(worker_msg)
-            last_result = worker_resp.content
-            ctx.set(f"{worker_name}_ergebnis", last_result, worker=worker_name)
+            all_results.append((worker_name, worker_resp.content))
+            ctx.set(f"{worker_name}_ergebnis", worker_resp.content, worker=worker_name)
 
-        final = await self._formulate_response(message.content, last_result)
+        combined = "\n\n".join(f"[{n}]\n{r}" for n, r in all_results)
+        final = await self._formulate_response(message.content, combined)
         self._append_history(user_id, history, final)
         return AgentResponse(content=final)
 
@@ -241,10 +247,13 @@ class Orchestrator(BaseAgent):
 
     async def _formulate_response(self, original_question: str, worker_result: str) -> str:
         prompt = (
-            f'Frage des Nutzers: "{original_question}"\n\n'
-            f"Ergebnis:\n{worker_result}\n\n"
-            "Beantworte die Frage des Nutzers direkt und vollständig auf Basis des Ergebnisses. "
-            "Gib alle relevanten Informationen vollständig aus. Keine Floskeln."
+            f'Frage: "{original_question}"\n\n'
+            f"Ergebnis der Spezialisten:\n{worker_result}\n\n"
+            "Beantworte die Frage präzise und vollständig:\n"
+            "- Filtere nur die für die Frage relevanten Informationen heraus\n"
+            "- Hat der Nutzer nach heute gefragt, zeige nur heutige Informationen\n"
+            "- Kommen mehrere Spezialisten-Ergebnisse, kombiniere sie zu einer Antwort\n"
+            "- Keine Floskeln, kein Vorgeplänkel"
         )
         return await self._chat(
             messages=[{"role": "user", "content": prompt}],
