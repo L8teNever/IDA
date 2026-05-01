@@ -9,31 +9,26 @@ logger = logging.getLogger(__name__)
 
 HISTORY_FILE = os.path.join(config.DATA_DIR, "conversation_history.json")
 
-SYSTEM_PROMPT = """Du bist IDA, eine persönliche KI-Assistentin mit Zugriff auf echte Dienste über Spezialisten (Worker).
+SYSTEM_PROMPT = """Du bist IDA, eine persönliche KI-Assistentin mit Zugriff auf echte Dienste über Spezialisten.
 
 REGELN:
 1. Kurz und direkt. Keine Floskeln.
 2. INTERNE BEFEHLE SIND GEHEIM – erkläre dem Nutzer NIEMALS DELEGATE/CHAIN/SCHEDULE/REMEMBER.
-3. REMEMBER nur wenn der Nutzer aktiv bittet etwas zu merken, oder bei sehr wichtigen persönlichen Fakten (Name, Allergien). NIE bei Smalltalk.
+3. REMEMBER nur wenn der Nutzer aktiv bittet etwas zu merken, oder bei sehr wichtigen persönlichen Fakten. NIE bei Smalltalk.
 
 DEIN GEDÄCHTNIS FÜR DIESEN NUTZER:
 {memory}
 
-PFLICHT-DELEGATION – du MUSST den passenden Worker nutzen, du kannst diese Dinge NICHT selbst:
-- Termine/Kalender → DELEGATE:calendar_worker:<aufgabe>
-- Aufgaben/Tasks → DELEGATE:tasks_worker:<aufgabe>
-- Kontakte → DELEGATE:contacts_worker:<aufgabe>
-- Stundenplan/Schule/Untis → DELEGATE:untis_worker:<aufgabe>
-- HTTP-Anfragen/externe APIs → DELEGATE:api_worker:<aufgabe>
-- Bilder analysieren → DELEGATE:vision_worker:<aufgabe>
+PFLICHT-DELEGATION – antworte NUR mit der DELEGATE-Zeile, kein Text davor oder danach:
+- Termine/Kalender → DELEGATE:calendar_worker
+- Aufgaben/Tasks → DELEGATE:tasks_worker
+- Kontakte → DELEGATE:contacts_worker
+- Stundenplan/Schule/Untis → DELEGATE:untis_worker
+- HTTP-Anfragen/externe APIs → DELEGATE:api_worker
+- Bilder analysieren → DELEGATE:vision_worker
 
-DELEGATION-SYNTAX (wenn du delegierst, darf die gesamte Antwort NUR die eine Zeile sein):
-DELEGATE:<worker_name>:<aufgabe>
-CHAIN:<worker1>,<worker2>:<aufgabe>
-SCHEDULE:<cron>|<job_id>|<beschreibung>
-<Bestätigungstext für den Nutzer>
-
-Cron-Beispiele: "0 9 * * 1" = jeden Montag 9 Uhr | "0 8 * * *" = täglich 8 Uhr
+Für mehrere Worker nacheinander: CHAIN:calendar_worker,tasks_worker
+Für geplante Jobs: SCHEDULE:0 9 * * 1|job_id|Beschreibung
 
 Verfügbare Worker:
 {workers}
@@ -196,40 +191,30 @@ class Orchestrator(BaseAgent):
         self, raw: str, message: AgentMessage,
         user_id: int, history: list, ctx: SharedContext, system: str,
     ) -> AgentResponse:
-        parts = raw[9:].split(":", 1)
-        if len(parts) != 2:
-            self._append_history(user_id, history, raw)
-            return AgentResponse(content=raw)
-
-        worker_name, task = parts[0].strip(), parts[1].strip()
+        worker_name = raw[9:].split(":")[0].strip()
         if worker_name not in self.workers:
             fallback = f"Unbekannter Worker: {worker_name}"
             self._append_history(user_id, history, fallback)
             return AgentResponse(content=fallback)
 
-        logger.info(f"Delegiere an {worker_name}: {task[:80]}")
+        logger.info(f"Delegiere an {worker_name}: {message.content[:80]}")
         worker_msg = AgentMessage(
-            content=self._enrich_task(task, ctx),
+            content=self._enrich_task(message.content, ctx),
             metadata={**message.metadata, "shared_context": ctx},
         )
         worker_resp = await self.workers[worker_name].process(worker_msg)
         ctx.set(f"{worker_name}_ergebnis", worker_resp.content, worker=worker_name)
 
-        self._append_history(user_id, history, worker_resp.content)
-        return AgentResponse(content=worker_resp.content)
+        final = await self._formulate_response(message.content, worker_resp.content)
+        self._append_history(user_id, history, final)
+        return AgentResponse(content=final)
 
     async def _handle_chain(
         self, raw: str, message: AgentMessage,
         user_id: int, history: list, ctx: SharedContext, system: str,
     ) -> AgentResponse:
         rest = raw[6:]  # nach "CHAIN:"
-        parts = rest.split(":", 1)
-        if len(parts) != 2:
-            self._append_history(user_id, history, raw)
-            return AgentResponse(content=raw)
-
-        worker_names = [w.strip() for w in parts[0].split(",")]
-        task = parts[1].strip()
+        worker_names = [w.strip() for w in rest.split(":")[0].split(",")]
         last_result = ""
 
         for worker_name in worker_names:
@@ -237,21 +222,35 @@ class Orchestrator(BaseAgent):
                 logger.warning(f"Chain: Worker '{worker_name}' nicht gefunden, überspringe")
                 continue
             logger.info(f"Chain-Schritt: {worker_name}")
-            chain_task = task
+            chain_input = message.content
             if last_result:
-                chain_task = f"{task}\n\nVorheriges Ergebnis:\n{last_result}"
+                chain_input = f"{message.content}\n\nVorheriges Ergebnis:\n{last_result}"
             worker_msg = AgentMessage(
-                content=self._enrich_task(chain_task, ctx),
+                content=self._enrich_task(chain_input, ctx),
                 metadata={**message.metadata, "shared_context": ctx},
             )
             worker_resp = await self.workers[worker_name].process(worker_msg)
             last_result = worker_resp.content
             ctx.set(f"{worker_name}_ergebnis", last_result, worker=worker_name)
 
-        self._append_history(user_id, history, last_result)
-        return AgentResponse(content=last_result)
+        final = await self._formulate_response(message.content, last_result)
+        self._append_history(user_id, history, final)
+        return AgentResponse(content=final)
 
     # ── Hilfsmethoden ────────────────────────────────────────────────────────
+
+    async def _formulate_response(self, original_question: str, worker_result: str) -> str:
+        prompt = (
+            f'Frage des Nutzers: "{original_question}"\n\n'
+            f"Ergebnis:\n{worker_result}\n\n"
+            "Beantworte die Frage des Nutzers direkt und vollständig auf Basis des Ergebnisses. "
+            "Gib alle relevanten Informationen vollständig aus. Keine Floskeln."
+        )
+        return await self._chat(
+            messages=[{"role": "user", "content": prompt}],
+            system="Du bist IDA, eine persönliche KI-Assistentin. Antworte auf Deutsch.",
+            num_predict=600,
+        )
 
     @staticmethod
     def _enrich_task(task: str, ctx: SharedContext) -> str:
