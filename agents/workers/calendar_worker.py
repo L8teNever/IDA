@@ -17,11 +17,12 @@ LOCAL_TZ = ZoneInfo("Europe/Berlin")
 
 SYSTEM_PROMPT = """Heute: {now}. Antworte NUR mit einem einzigen JSON-Objekt, kein Text drumherum.
 
-{{"action":"list_events","params":{{"days":7}}}}
-{{"action":"create_event","params":{{"title":"...","start":"2025-04-29T10:00:00","end":"2025-04-29T11:00:00"}}}}
-{{"action":"update_event","params":{{"event_id":"...","title":"...","start":"...","end":"..."}}}}
-{{"action":"delete_event","params":{{"event_id":"..."}}}}
-{{"action":"find_free","params":{{"date":"2025-04-29","duration_minutes":60}}}}
+Termine heute: {{"action":"list_events","params":{{"days":1}}}}
+Termine diese Woche: {{"action":"list_events","params":{{"days":7}}}}
+Termin erstellen: {{"action":"create_event","params":{{"title":"...","start":"2025-04-29T10:00:00","end":"2025-04-29T11:00:00"}}}}
+Termin bearbeiten: {{"action":"update_event","params":{{"event_id":"...","title":"...","start":"...","end":"..."}}}}
+Termin löschen: {{"action":"delete_event","params":{{"event_id":"..."}}}}
+Freie Zeit: {{"action":"find_free","params":{{"date":"2025-04-29","duration_minutes":60}}}}
 
 Datum: YYYY-MM-DDTHH:MM:SS, Zeitzone Europe/Berlin.{context}"""
 
@@ -83,17 +84,24 @@ class CalendarWorker(BaseAgent):
     def _list_events(self, params: dict) -> str:
         days = params.get("days", 7)
         now = datetime.now(LOCAL_TZ)
-        until = now + timedelta(days=days)
+        if days <= 1:
+            until = now.replace(hour=23, minute=59, second=59, microsecond=0)
+            header = "Termine heute noch:"
+            empty_msg = "Heute stehen keine weiteren Termine an."
+        else:
+            until = now + timedelta(days=days)
+            header = f"Termine der nächsten {days} Tage:"
+            empty_msg = f"Keine Termine in den nächsten {days} Tagen."
         result = self._svc().events().list(
             calendarId="primary", timeMin=now.isoformat(), timeMax=until.isoformat(),
-            maxResults=20, singleEvents=True, orderBy="startTime",
+            maxResults=50, singleEvents=True, orderBy="startTime",
         ).execute()
         events = result.get("items", [])
 
         cache: dict = {}
         if not events:
-            return f"Keine Termine in den nächsten {days} Tagen."
-        lines = [f"Termine der nächsten {days} Tage:\n"]
+            return empty_msg
+        lines = [header + "\n"]
         for ev in events:
             start = ev["start"].get("dateTime", ev["start"].get("date", ""))
             start_str = _fmt_dt(start)
