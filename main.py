@@ -1,6 +1,7 @@
 import asyncio
 import json
 import logging
+import os
 import httpx
 import uvicorn
 import config
@@ -57,14 +58,12 @@ async def pull_model(model: str):
 
 
 def _get_untis_interval() -> int:
-    if config.UNTIS_CONFIG_FILE:
-        import os
-        if os.path.exists(config.UNTIS_CONFIG_FILE):
-            try:
-                with open(config.UNTIS_CONFIG_FILE, encoding="utf-8") as f:
-                    return int(json.load(f).get("check_interval_minutes", 30))
-            except Exception:
-                pass
+    if config.UNTIS_CONFIG_FILE and os.path.exists(config.UNTIS_CONFIG_FILE):
+        try:
+            with open(config.UNTIS_CONFIG_FILE, encoding="utf-8") as f:
+                return int(json.load(f).get("check_interval_minutes", 30))
+        except Exception:
+            pass
     return 30
 
 
@@ -79,7 +78,95 @@ async def run_web_server():
     await uvicorn.Server(uv_config).serve()
 
 
-async def watch_telegram_config(orchestrator, scheduler, untis_worker, handler_ref):
+def _check_google_services() -> list[str]:
+    """Synchronous Google API checks — run via asyncio.to_thread."""
+    results = []
+    try:
+        from agents.workers._google_base import get_credentials, build_service
+        get_credentials()  # raises RuntimeError if token missing/invalid
+    except RuntimeError:
+        return [
+            "❌ Google Kalender – nicht verbunden",
+            "❌ Google Tasks – nicht verbunden",
+            "❌ Google Kontakte – nicht verbunden",
+        ]
+    except Exception as e:
+        msg = f"❌ Google – Fehler: {str(e)[:50]}"
+        return [msg, msg, msg]
+
+    for label, api, version, call in [
+        (
+            "Google Kalender", "calendar", "v3",
+            lambda svc: svc.calendarList().list(maxResults=1).execute(),
+        ),
+        (
+            "Google Tasks", "tasks", "v1",
+            lambda svc: svc.tasklists().list(maxResults=1).execute(),
+        ),
+        (
+            "Google Kontakte", "people", "v1",
+            lambda svc: svc.people().connections().list(
+                resourceName="people/me", pageSize=1, personFields="names"
+            ).execute(),
+        ),
+    ]:
+        try:
+            from agents.workers._google_base import build_service
+            call(build_service(api, version))
+            results.append(f"✅ {label}")
+        except Exception as e:
+            short = str(e)[:60].replace("\n", " ")
+            results.append(f"❌ {label} – {short}")
+
+    return results
+
+
+async def run_startup_check() -> str:
+    logger.info("Starte Dienste-Check...")
+    lines = ["IDA gestartet ✓\n\nDienste-Check:"]
+
+    # Ollama (already confirmed running at this point)
+    lines.append(f"✅ Ollama ({config.MAIN_MODEL} / {config.WORKER_MODEL})")
+
+    # Google (sync calls in thread to avoid blocking event loop)
+    try:
+        google_lines = await asyncio.to_thread(_check_google_services)
+        lines.extend(google_lines)
+    except Exception as e:
+        lines.append(f"❌ Google – Check fehlgeschlagen: {e}")
+
+    # WebUntis
+    if os.path.exists(config.UNTIS_CONFIG_FILE):
+        try:
+            with open(config.UNTIS_CONFIG_FILE, encoding="utf-8") as f:
+                untis_cfg = json.load(f)
+            if untis_cfg.get("server") and untis_cfg.get("username"):
+                lines.append("✅ WebUntis – konfiguriert")
+            else:
+                lines.append("⚠️ WebUntis – unvollständig (Server/Nutzer fehlen)")
+        except Exception:
+            lines.append("⚠️ WebUntis – Konfigurationsfehler")
+    else:
+        lines.append("⚠️ WebUntis – nicht konfiguriert")
+
+    lines.append("\nIch bin bereit!")
+    report = "\n".join(lines)
+    logger.info(f"Dienste-Check abgeschlossen:\n{report}")
+    return report
+
+
+async def _send_startup_report(handler: TelegramHandler, report: str):
+    if not config.TELEGRAM_ALLOWED_USERS:
+        logger.warning("TELEGRAM_ALLOWED_USERS leer – Startup-Bericht kann nicht gesendet werden")
+        return
+    for uid in config.TELEGRAM_ALLOWED_USERS:
+        try:
+            await handler.send_message(uid, report)
+        except Exception as e:
+            logger.warning(f"Startup-Bericht an {uid} fehlgeschlagen: {e}")
+
+
+async def watch_telegram_config(orchestrator, scheduler, untis_worker, handler_ref, startup_report: str = ""):
     import os
     current_token = config.TELEGRAM_TOKEN
 
@@ -105,6 +192,8 @@ async def watch_telegram_config(orchestrator, scheduler, untis_worker, handler_r
     if current_token:
         try:
             handler_ref[0] = await start_bot(current_token)
+            if startup_report:
+                await _send_startup_report(handler_ref[0], startup_report)
         except Exception as e:
             logger.error(f"Telegram Bot konnte nicht gestartet werden: {e}")
     else:
@@ -123,7 +212,7 @@ async def watch_telegram_config(orchestrator, scheduler, untis_worker, handler_r
                             new_token = line.split("=", 1)[1].strip()
             except Exception:
                 pass
-        
+
         if new_token != current_token:
             logger.info("Telegram Token hat sich geändert. Starte Bot neu...")
             current_token = new_token
@@ -133,18 +222,19 @@ async def watch_telegram_config(orchestrator, scheduler, untis_worker, handler_r
                 except Exception as e:
                     logger.error(f"Fehler beim Stoppen des Bots: {e}")
                 handler_ref[0] = None
-            
+
             if current_token:
                 try:
                     handler_ref[0] = await start_bot(current_token)
                 except Exception as e:
                     logger.error(f"Telegram Bot konnte nicht gestartet werden: {e}")
 
+
 async def main():
     logger.info("IDA startet...")
     logger.info(f"Web-Interface: http://localhost:{config.WEB_PORT}")
 
-    # Web-Server IMMER als erstes starten – unabhängig von Telegram oder Ollama
+    # Web-Server zuerst starten – unabhängig von allem anderen
     web_task = asyncio.create_task(run_web_server())
     logger.info(f"Web-Interface erreichbar: http://localhost:{config.WEB_PORT}")
 
@@ -168,9 +258,14 @@ async def main():
     scheduler.start()
     scheduler.restore_jobs_after_start()
 
-    # Telegram Bot Watchdog
+    # Dienste-Check vor dem ersten Telegram-Start
+    startup_report = await run_startup_check()
+
+    # Telegram Bot Watchdog (sendet den Bericht nach dem Start)
     handler_ref = [None]
-    watch_task = asyncio.create_task(watch_telegram_config(orchestrator, scheduler, untis_worker, handler_ref))
+    watch_task = asyncio.create_task(
+        watch_telegram_config(orchestrator, scheduler, untis_worker, handler_ref, startup_report)
+    )
 
     try:
         await web_task
@@ -182,6 +277,7 @@ async def main():
             await handler_ref[0].stop()
         scheduler.stop()
         logger.info("IDA beendet.")
+
 
 if __name__ == "__main__":
     asyncio.run(main())
