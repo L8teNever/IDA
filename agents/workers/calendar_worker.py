@@ -115,7 +115,6 @@ class CalendarWorker(BaseAgent):
             line = f"• {start_str}: {title}"
             if loc:
                 line += f" ({loc})"
-            line += f"\n  ID: {ev['id']}"
             lines.append(line)
         self.memory.set("event_cache", cache)
         return "\n".join(lines)

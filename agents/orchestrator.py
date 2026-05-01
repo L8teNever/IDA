@@ -148,7 +148,7 @@ class Orchestrator(BaseAgent):
             context=context_text,
             memory=memory_str
         )
-        raw = await self._chat(messages=history, system=system)
+        raw = await self._chat(messages=history, system=system, num_predict=150)
 
         import re
 
@@ -215,9 +215,8 @@ class Orchestrator(BaseAgent):
         worker_resp = await self.workers[worker_name].process(worker_msg)
         ctx.set(f"{worker_name}_ergebnis", worker_resp.content, worker=worker_name)
 
-        final = await self._summarize(message.content, worker_name, worker_resp.content, ctx, system)
-        self._append_history(user_id, history, final)
-        return AgentResponse(content=final)
+        self._append_history(user_id, history, worker_resp.content)
+        return AgentResponse(content=worker_resp.content)
 
     async def _handle_chain(
         self, raw: str, message: AgentMessage,
@@ -249,9 +248,8 @@ class Orchestrator(BaseAgent):
             last_result = worker_resp.content
             ctx.set(f"{worker_name}_ergebnis", last_result, worker=worker_name)
 
-        final = await self._summarize(message.content, "+".join(worker_names), last_result, ctx, system)
-        self._append_history(user_id, history, final)
-        return AgentResponse(content=final)
+        self._append_history(user_id, history, last_result)
+        return AgentResponse(content=last_result)
 
     # ── Hilfsmethoden ────────────────────────────────────────────────────────
 
@@ -261,16 +259,6 @@ class Orchestrator(BaseAgent):
         if ctx_text:
             return f"{task}\n\n{ctx_text}"
         return task
-
-    async def _summarize(
-        self, original: str, worker_name: str, result: str, ctx: SharedContext, system: str
-    ) -> str:
-        prompt = (
-            f"Nutzeranfrage: {original}\n"
-            f"Ergebnis von {worker_name}:\n{result}\n\n"
-            "Fasse das Ergebnis EXTREM KURZ und direkt für den Nutzer zusammen (max 1-2 Sätze). Nenne nur die nackten Fakten ohne jede Einleitung oder Floskel."
-        )
-        return await self._chat(messages=[{"role": "user", "content": prompt}], system=system)
 
     def _append_history(self, user_id: int, history: list, response: str):
         history.append({"role": "assistant", "content": response})

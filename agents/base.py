@@ -33,12 +33,16 @@ class BaseAgent(ABC):
     async def process(self, message: AgentMessage) -> AgentResponse:
         pass
 
-    async def _chat(self, messages: list, system: str = None) -> str:
+    async def _chat(self, messages: list, system: str = None, num_predict: int = 400) -> str:
         full_messages = []
         if system:
             full_messages.append({"role": "system", "content": system})
         full_messages.extend(messages)
-        response = await self.client.chat(model=self.model, messages=full_messages)
+        response = await self.client.chat(
+            model=self.model,
+            messages=full_messages,
+            options={"num_predict": num_predict},
+        )
         if isinstance(response, dict):
             return response["message"]["content"]
         return response.message.content
