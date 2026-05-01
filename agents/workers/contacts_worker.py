@@ -69,7 +69,7 @@ class ContactsWorker(BaseAgent):
         context = "\n".join(context_lines)
 
         system = SYSTEM_PROMPT.format(context=context)
-        raw = await self._chat(messages=[{"role": "user", "content": message.content}], system=system)
+        raw = await self._chat(messages=[{"role": "user", "content": message.content}], system=system, num_predict=150)
 
         parsed = _parse_json_response(raw)
         if not parsed:

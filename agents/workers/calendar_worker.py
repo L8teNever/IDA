@@ -15,27 +15,15 @@ from agents.workers._google_base import build_service, _parse_json_response
 logger = logging.getLogger(__name__)
 LOCAL_TZ = ZoneInfo("Europe/Berlin")
 
-SYSTEM_PROMPT = """Du bist ein Google Kalender Spezialist. Heute ist {now}.
-Antworte NUR mit einem JSON-Objekt.
+SYSTEM_PROMPT = """Heute: {now}. Antworte NUR mit einem einzigen JSON-Objekt, kein Text drumherum.
 
-Termine anzeigen:
-{{"action": "list_events", "params": {{"days": 7}}}}
+{{"action":"list_events","params":{{"days":7}}}}
+{{"action":"create_event","params":{{"title":"...","start":"2025-04-29T10:00:00","end":"2025-04-29T11:00:00"}}}}
+{{"action":"update_event","params":{{"event_id":"...","title":"...","start":"...","end":"..."}}}}
+{{"action":"delete_event","params":{{"event_id":"..."}}}}
+{{"action":"find_free","params":{{"date":"2025-04-29","duration_minutes":60}}}}
 
-Termin erstellen:
-{{"action": "create_event", "params": {{"title": "...", "start": "2025-04-29T10:00:00", "end": "2025-04-29T11:00:00", "description": "...", "location": "..."}}}}
-
-Termin bearbeiten (event_id aus vorheriger Suche):
-{{"action": "update_event", "params": {{"event_id": "...", "title": "...", "start": "...", "end": "..."}}}}
-
-Termin löschen:
-{{"action": "delete_event", "params": {{"event_id": "..."}}}}
-
-Freie Zeiten finden:
-{{"action": "find_free", "params": {{"date": "2025-04-29", "duration_minutes": 60}}}}
-
-Regeln: Datum immer YYYY-MM-DDTHH:MM:SS | Zeitzone Europe/Berlin | description/location optional
-Relative Datumsangaben (morgen, nächsten Montag) korrekt berechnen.
-{context}"""
+Datum: YYYY-MM-DDTHH:MM:SS, Zeitzone Europe/Berlin.{context}"""
 
 
 class CalendarWorker(BaseAgent):
@@ -68,7 +56,7 @@ class CalendarWorker(BaseAgent):
 
         now_str = datetime.now(LOCAL_TZ).strftime("%A, %d.%m.%Y %H:%M Uhr")
         system = SYSTEM_PROMPT.format(now=now_str, context=context)
-        raw = await self._chat(messages=[{"role": "user", "content": message.content}], system=system)
+        raw = await self._chat(messages=[{"role": "user", "content": message.content}], system=system, num_predict=150)
 
         parsed = _parse_json_response(raw)
         if not parsed:

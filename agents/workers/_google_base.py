@@ -57,13 +57,24 @@ def build_service(api: str, version: str):
 
 
 def _parse_json_response(raw: str) -> Optional[dict]:
-    """LLM-Antwort bereinigen und als JSON parsen."""
+    """Erstes vollständiges JSON-Objekt aus LLM-Antwort extrahieren."""
     import json
-    import re
     try:
-        match = re.search(r'\{.*\}', raw, re.DOTALL)
-        if match:
-            return json.loads(match.group(0))
+        return json.loads(raw.strip())
     except Exception:
         pass
+    start = raw.find('{')
+    if start == -1:
+        return None
+    depth = 0
+    for i, ch in enumerate(raw[start:], start):
+        if ch == '{':
+            depth += 1
+        elif ch == '}':
+            depth -= 1
+            if depth == 0:
+                try:
+                    return json.loads(raw[start:i + 1])
+                except Exception:
+                    return None
     return None
